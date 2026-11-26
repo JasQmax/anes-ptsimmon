@@ -17,6 +17,10 @@ body{margin:0;background:#000;color:#ddd;font-family:Arial,Helvetica,sans-serif}
 .mid{font-size:clamp(28px,6vh,64px);font-weight:bold;line-height:1.05}
 .abpn{font-size:clamp(26px,5.2vh,56px);font-weight:bold;line-height:1.05}
 .nbtn{font-size:clamp(11px,1.8vh,15px);padding:3px 10px;margin-top:2px;border-radius:5px;border:1px solid #888;background:#333;color:#fff;align-self:flex-start;font-weight:bold}
+@keyframes alf{50%{background:#d00;color:#fff}}
+.alm{animation:alf 1s steps(1) infinite;border-radius:6px;align-self:flex-start;padding:0 8px}
+#albar{position:absolute;top:6px;right:410px;z-index:6;display:none;align-items:center;gap:10px;padding:6px 12px;border-radius:6px;font-weight:bold;font-size:18px;color:#fff;background:#c00}
+#albar button{padding:6px 10px;font-weight:bold;border-radius:5px;border:0}
 #defib{position:absolute;right:410px;bottom:10px;width:300px;background:#1b1b1b;border:2px solid #f90;border-radius:8px;padding:12px;display:none;z-index:5}
 #defib h3{margin:0 0 8px;color:#f90;font-size:15px}
 #defib button,#start button{font-size:16px;padding:10px;margin:3px;border-radius:6px;border:0;font-weight:bold}
@@ -35,6 +39,9 @@ body{margin:0;background:#000;color:#ddd;font-family:Arial,Helvetica,sans-serif}
 #rem input[type=range]{width:100%}
 #rem label{display:flex;justify-content:space-between;font-size:14px;margin-top:8px}
 #rem select,#rem input[type=text]{padding:8px;font-size:15px}
+.ar{display:flex;gap:6px;align-items:center}
+.ar button{flex:1;text-align:left}
+.ar input{width:78px;padding:8px;font-size:15px;background:#222;color:#fff;border:1px solid #555;border-radius:6px}
 </style></head><body>
 <div id="app"></div>
 <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
@@ -44,8 +51,11 @@ const Q=new URLSearchParams(location.search);
 const ROLE=Q.get('role')==='remote'?'remote':'monitor';
 const BROKER=Q.get('broker')||'wss://broker.emqx.io:8084/mqtt';
 const DEF={rhythm:'sinus',hr:75,ect:0,sys:120,dia:75,abp:false,nibpInt:5,etco2:36,rr:12,capno:'normal',
- ppeak:18,peep:5,temp:36.6,spo2:98,mute:false,defibOpen:false,sync:false,joules:150};
-const S=Object.assign({},DEF);
+ ppeak:18,peep:5,temp:36.6,spo2:98,mute:false,defibOpen:false,sync:false,joules:150,
+ alOn:true,
+ al:{hr:{lo:50,hi:120,on:true},spo2:{lo:90,hi:100,on:true},sys:{lo:90,hi:160,on:true},dia:{lo:40,hi:100,on:true},
+     etco2:{lo:25,hi:50,on:true},rr:{lo:8,hi:25,on:true},ppeak:{lo:0,hi:35,on:true},temp:{lo:35.5,hi:38,on:true}}};
+const S=JSON.parse(JSON.stringify(DEF));
 const CID=(ROLE[0])+Math.random().toString(16).slice(2,8);
 let SESS=Q.get('s')||(ROLE==='monitor'?(localStorage.amSess||(localStorage.amSess=Math.random().toString(36).slice(2,8))):'');
 const T=x=>`anaesmon/${SESS}/${x}`;
@@ -69,6 +79,8 @@ function remoteApp(){
   const sl=(k,l,min,max,step,u)=>`<label><span>${l}</span><b><span id="v_${k}"></span> ${u||''}</b></label><input type="range" id="r_${k}" min="${min}" max="${max}" step="${step||1}">`;
   const RH=[['sinus','Sinus'],['pvc','Sinus + ectopics'],['af','AF'],['vt','VT'],['vf','VF'],['pea','PEA']];
   const CP=[['normal','Normal'],['obstructive','Obstructive'],['leak','Leak'],['rebreath','Rebreathing'],['curare','Curare cleft'],['apnoea','Apnoea']];
+  const ALR=[['hr','HR (bpm)',1],['spo2','SpO₂ (%)',1],['sys','Systolic BP (mmHg)',1],['dia','Diastolic BP (mmHg)',1],
+             ['etco2','EtCO₂ (mmHg)',1],['rr','Resp rate (/min)',1],['ppeak','Peak Paw (cmH₂O)',1],['temp','Temp (°C)',0.1]];
   app.innerHTML=`<div id="rem">
   <div id="cs" style="font-size:12px;color:#aaa">Connecting… session ${SESS}</div>
   <h2>Rhythm</h2><div id="rh"></div>${sl('hr','Heart rate',20,220,1,'bpm')}${sl('ect','Ectopic burden (PVC after x% of beats; 100 = bigeminy)',0,100,5,'%')}
@@ -79,20 +91,35 @@ function remoteApp(){
   <button id="nnow" class="amb">▶ Start NIBP cycle</button><button id="nstop">Cancel cycle</button>
   <h2>Ventilation</h2>${sl('etco2','EtCO₂ (set value)',0,80,1,'mmHg')}${sl('rr','Resp rate (0 = none)',0,40,1,'/min')}
   <div id="cp"></div>${sl('ppeak','Peak airway pressure',5,50,1,'cmH₂O')}${sl('peep','PEEP',0,20,1,'cmH₂O')}
+  <h2>Alarm limits</h2>
+  <button id="alon">Alarms ON</button><button id="alsil" class="amb">🔕 Silence 2 min</button>
+  <div id="alt" style="color:#f66;font-weight:bold;min-height:20px;margin:4px 0"></div>
+  <div class="ar" style="font-size:12px;color:#aaa"><span style="flex:1">Tap name to enable/disable</span><span style="width:78px">Low</span><span style="width:78px">High</span></div>
+  <div id="alrows"></div>
   <h2>Defibrillator</h2><button id="dopen">Open panel on monitor</button><button id="dsync">Sync OFF</button>
   <label><span>Energy</span><b><span id="v_joules"></span> J</b></label>
   <div id="jb"></div>
   <button id="ch" class="amb">CHARGE</button><button id="sh" class="red">SHOCK</button><button id="dis">Disarm</button>
   <div id="ds" style="margin-top:6px;font-weight:bold;color:#f90"></div>
   <h2>Sound</h2><button id="mute">Mute</button></div>`;
-  const rh=document.getElementById('rh'),cp=document.getElementById('cp'),jb=document.getElementById('jb');
+  const rh=document.getElementById('rh'),cp=document.getElementById('cp'),jb=document.getElementById('jb'),alrows=document.getElementById('alrows');
   const PRE={sinus:{hr:75},pvc:{hr:75,ect:20},af:{hr:110},vt:{hr:170},vf:{},pea:{hr:50}};
   RH.forEach(([k,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.k=k;b.onclick=()=>set(Object.assign({rhythm:k},PRE[k]));rh.appendChild(b)});
   CP.forEach(([k,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.k=k;b.onclick=()=>set({capno:k});cp.appendChild(b)});
   [1,2,5,10,20,30,50,70,100,120,150,200,300,360].forEach(j=>{const b=document.createElement('button');b.textContent=j;b.dataset.j=j;b.onclick=()=>set({joules:j});jb.appendChild(b)});
+  const setAl=(k,o)=>set({al:Object.assign({},S.al,{[k]:Object.assign({},S.al[k],o)})});
+  ALR.forEach(([k,l,st])=>{
+    const d=document.createElement('div');d.className='ar';
+    d.innerHTML=`<button id="ab_${k}">${l}</button><input type="number" step="${st}" id="lo_${k}"><input type="number" step="${st}" id="hi_${k}">`;
+    alrows.appendChild(d);
+    d.querySelector('button').onclick=()=>setAl(k,{on:!S.al[k].on});
+    d.querySelector('#lo_'+k).onchange=e=>{if(e.target.value!=='')setAl(k,{lo:+e.target.value})};
+    d.querySelector('#hi_'+k).onchange=e=>{if(e.target.value!=='')setAl(k,{hi:+e.target.value})};
+  });
   ['hr','ect','spo2','temp','sys','dia','etco2','rr','ppeak','peep'].forEach(k=>{document.getElementById('r_'+k).oninput=e=>set({[k]:+e.target.value})});
   ni.onchange=()=>set({nibpInt:+ni.value});
   abp.onclick=()=>set({abp:!S.abp});mute.onclick=()=>set({mute:!S.mute});
+  alon.onclick=()=>set({alOn:!S.alOn});alsil.onclick=()=>pub('cmd',{c:'silence'});
   dopen.onclick=()=>set({defibOpen:!S.defibOpen});dsync.onclick=()=>set({sync:!S.sync});
   nnow.onclick=()=>pub('cmd',{c:'nibp'});nstop.onclick=()=>pub('cmd',{c:'nibpstop'});
   ch.onclick=()=>pub('cmd',{c:'charge'});
@@ -107,13 +134,18 @@ function remoteApp(){
     jb.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.j===S.joules));
     abp.classList.toggle('on',S.abp);abp.textContent='ABP trace: '+(S.abp?'ON':'OFF');
     mute.classList.toggle('on',S.mute);
+    alon.classList.toggle('on',S.alOn);alon.textContent='Alarms '+(S.alOn?'ON':'OFF');
+    ALR.forEach(([k])=>{const a=S.al[k];if(!a)return;
+      document.getElementById('ab_'+k).classList.toggle('on',a.on);
+      const lo=document.getElementById('lo_'+k),hi=document.getElementById('hi_'+k);
+      if(document.activeElement!==lo)lo.value=a.lo;if(document.activeElement!==hi)hi.value=a.hi});
     dopen.classList.toggle('on',S.defibOpen);dsync.classList.toggle('on',S.sync);dsync.textContent='Sync '+(S.sync?'ON':'OFF');
   }
   let got=false;
   connect((t,m)=>{
     if(t==='state'&&m.from!==CID){got=true;Object.assign(S,m);delete S.from;ui()}
     if(t==='evt'){Object.assign(S,m);ui();pub('state',Object.assign({from:CID},S),true)}
-    if(t==='status')ds.textContent=m.msg||'';
+    if(t==='status'){ds.textContent=m.msg||'';if(m.al!==undefined)alt.textContent=m.al?'⚠ '+m.al:'No active alarms'}
   },ok=>{cs.textContent=(ok?'Connected':'Disconnected')+' · session '+SESS;
     if(ok)setTimeout(()=>{if(!got)pub('state',Object.assign({from:CID},S),true)},700)});
   ui();
@@ -136,10 +168,11 @@ function monitorApp(){
    <div class="box" style="color:#0ff"><small>SpO₂ %</small><div class="big" id="n_spo2">--</div></div>
    <div class="box" style="color:#f44" id="boxabp"><small>ABP mmHg</small><div class="abpn" id="n_abp">--</div></div>
    <div class="box" style="color:#fff"><small>NIBP mmHg <span id="n_nt" style="font-weight:normal;color:#999"></span></small><div class="mid" id="n_nibp">--</div><small id="n_nm" style="color:#999"></small><button class="nbtn" id="nbtn">Start NIBP cycle</button></div>
-   <div class="box" style="color:#ff0"><small>EtCO₂ mmHg &nbsp; <span id="n_rr"></span></small><div class="big" id="n_co2">--</div></div>
+   <div class="box" style="color:#ff0"><small>EtCO₂ mmHg</small><div class="big" id="n_co2">--</div><small id="n_rr"></small></div>
    <div class="box" style="color:#fff"><small>Paw peak / PEEP cmH₂O</small><div class="big" id="n_paw">--</div></div>
    <div class="box" style="color:#fa0"><small>Temp</small><div class="mid" id="n_temp">--</div></div>
   </div>
+  <div id="albar"><span id="altxt"></span><button id="alsil">🔕 Silence</button></div>
   <div id="defib"><h3 id="dtitle">DEFIB</h3>
    <div style="display:flex;align-items:center;justify-content:space-between"><button id="jdn" style="background:#444;color:#fff;width:60px">−</button><div class="big" id="dj" style="color:#fff;font-size:48px">150 J</div><button id="jup" style="background:#444;color:#fff;width:60px">+</button></div>
    <div class="bar"><div id="bf"></div></div><div id="dmsg" style="min-height:20px;color:#ff0"></div>
@@ -164,6 +197,7 @@ function monitorApp(){
   const TR={ecg:{col:'#3f3'},pleth:{col:'#0ff'},abp:{col:'#f44'},co2:{col:'#ff0'},paw:{col:'#fff'}};
   for(const k in TR){const o=TR[k];o.c=document.getElementById('c_'+k);o.x=o.c.getContext('2d');o.buf=new Float32Array(N).fill(NaN);o.i=0;o.mark=new Uint8Array(N)}
   let t=0,ph=0,pulses=[],shockT=-9,pauseUntil=0,nextV=false,lastRh='';
+  let lastAlTxt='',silencedUntil=0,nextAlSound=0,prevAlarm=new Set(),alKeyShown='';
   const beat={t0:0,rr:0.8,type:'N',fired:false,kk:1};
   const D={charged:false,charging:false,pend:false,pendUntil:0,msg:''};
 
@@ -208,6 +242,8 @@ function monitorApp(){
     else v=sm(e/0.1)*(0.92+0.08*e);
     return base+(1-base)*v}
   const Eeff=()=>perfusing()?S.etco2:Math.min(S.etco2,8);
+  const etDisp=()=>(S.rr<=0||S.capno==='apnoea')?0:Math.round(Eeff()*exv(1,S.capno,S.capno==='rebreath'?0.15:0));
+  const pawDisp=()=>S.rr>0?Math.round(S.capno==='leak'?S.peep+(S.ppeak-S.peep)*0.7:S.ppeak):0;
   function capno(p){
     const P=S.capno;if(S.rr<=0||P==='apnoea')return 0;
     const E=Eeff(),base=P==='rebreath'?0.15:0;
@@ -264,7 +300,7 @@ function monitorApp(){
     if(res){S.rhythm=res;lastRh='';if(res==='sinus')S.hr=75;pub('evt',{rhythm:res,hr:S.hr,ect:S.ect})}
     updDef();pubStatus();
   }
-  function pubStatus(){pub('status',{msg:D.msg,charged:D.charged,charging:D.charging,joules:S.joules},true)}
+  function pubStatus(){pub('status',{msg:D.msg,charged:D.charged,charging:D.charging,joules:S.joules,al:lastAlTxt},true)}
   function charge(){if(D.charged||D.charging)return;D.charging=true;D.msg='Charging '+S.joules+' J…';chargeTone();
     setTimeout(()=>{if(!D.charging)return;D.charging=false;D.charged=true;D.msg='CHARGED '+S.joules+' J – press SHOCK';startReady();updDef();pubStatus()},2500);updDef();pubStatus()}
   function disarm(msg){D.charging=false;D.charged=false;D.pend=false;stopReady();try{chOsc&&chOsc.stop()}catch(e){}D.msg=msg||'Disarmed';updDef();pubStatus()}
@@ -322,6 +358,56 @@ function monitorApp(){
   setInterval(()=>nibpTick(performance.now()/1000),100);
   nbtn.onclick=()=>NB.st==='meas'?stopNIBP():startNIBP();
 
+  /* alarms */
+  const AP=[['hr','HR',2],['spo2','SpO₂',2],['sys','SBP',2],['dia','DBP',2],['etco2','EtCO₂',2],['rr','RR',1],['ppeak','Paw',1],['temp','Temp',1]];
+  function curVal(k){
+    const perf=perfusing();
+    switch(k){
+      case 'hr':return S.rhythm==='vf'?0:S.hr;
+      case 'spo2':return perf?S.spo2:0;
+      case 'sys':case 'dia':
+        if(S.abp)return perf?S[k]:0;
+        return(NB.sys!=null&&!NB.err)?(k==='sys'?NB.sys:NB.dia):null;
+      case 'etco2':return etDisp();
+      case 'rr':return S.rr;
+      case 'ppeak':return pawDisp();
+      case 'temp':return S.temp;
+    }
+    return null;
+  }
+  function playAlarm(hi){
+    const offs=hi?[0,130,260,650,780]:[0,160,320],f=hi?880:620;
+    offs.forEach(o=>setTimeout(()=>beep(f,0.1,'square',0.06),o));
+  }
+  function silence(){silencedUntil=performance.now()/1000+120;nextAlSound=0;evalAlarms(performance.now()/1000)}
+  alsil.onclick=silence;
+  function evalAlarms(now){
+    const act=[];
+    if(S.alOn){for(const [k,lab,pr] of AP){const a=S.al[k];if(!a||!a.on)continue;
+      const v=curVal(k);if(v==null)continue;
+      if(v<a.lo)act.push({k,txt:lab+' LOW',pr});else if(v>a.hi)act.push({k,txt:lab+' HIGH',pr})}}
+    const ids=act.map(a=>a.txt);
+    if(act.some(a=>!prevAlarm.has(a.txt)))silencedUntil=0;
+    prevAlarm=new Set(ids);
+    const silenced=now<silencedUntil;
+    const key=ids.join('|')+'|'+S.abp;
+    if(key!==alKeyShown){
+      alKeyShown=key;
+      document.querySelectorAll('.alm').forEach(e=>e.classList.remove('alm'));
+      const els={hr:n_hr,spo2:n_spo2,sys:S.abp?n_abp:n_nibp,dia:S.abp?n_abp:n_nibp,etco2:n_co2,rr:n_rr,ppeak:n_paw,temp:n_temp};
+      act.forEach(a=>els[a.k]&&els[a.k].classList.add('alm'));
+    }
+    const hi=act.some(a=>a.pr===2);
+    albar.style.display=act.length?'flex':'none';
+    albar.style.background=hi?'#c00':'#b80';
+    altxt.textContent=ids.join(' · ')+(silenced?'  (silenced)':'');
+    alsil.style.display=silenced?'none':'';
+    if(act.length&&!silenced&&now>=nextAlSound){playAlarm(hi);nextAlSound=now+(hi?5:10)}
+    if(!act.length)nextAlSound=0;
+    const txt=ids.join(', ');
+    if(txt!==lastAlTxt){lastAlTxt=txt;pubStatus()}
+  }
+
   /* drawing */
   function draw(){
     for(const k in TR){const o=TR[k],c=o.c,dpr=window.devicePixelRatio||1;
@@ -349,7 +435,7 @@ function monitorApp(){
     if(D.pend&&now>D.pendUntil){D.pend=false;D.msg='No R wave sensed – NO SHOCK delivered';updDef();pubStatus()}
     const perf=perfusing(),vf=S.rhythm==='vf';
     n_hr.textContent=vf?'---':S.hr;
-    n_spo2.textContent=perf?S.spo2:'--';n_spo2.style.color=perf&&S.spo2<90?'#f33':'';
+    n_spo2.textContent=perf?S.spo2:'--';
     rowabp.style.display=boxabp.style.display=S.abp?'':'none';
     const mp=Math.round(S.dia+(S.sys-S.dia)/3);
     n_abp.textContent=S.abp?(perf?`${S.sys}/${S.dia} (${mp})`:'--/-- (--)'):'';
@@ -359,11 +445,11 @@ function monitorApp(){
       else if(NB.sys!=null){n_nibp.textContent=`${NB.sys}/${NB.dia}`;n_nm.textContent=`(${Math.round(NB.dia+(NB.sys-NB.dia)/3)}) at ${NB.time}`+(NB.msg?' · '+NB.msg:'')}
       else{n_nibp.textContent='--/--';n_nm.textContent=NB.msg}}
     n_nt.textContent=S.nibpInt>0&&NB.st==='idle'&&isFinite(NB.next)?`auto ${S.nibpInt} min · next ${Math.max(0,Math.round(NB.next-now))}s`:S.nibpInt>0?`auto ${S.nibpInt} min`:'manual';
-    const ap=S.rr<=0||S.capno==='apnoea';
-    n_co2.textContent=ap?'0':Math.round(Eeff()*exv(1,S.capno,S.capno==='rebreath'?0.15:0));
-    n_rr.textContent=ap?'':'RR '+S.rr;
-    n_paw.textContent=S.rr>0?`${Math.round(S.capno==='leak'?S.peep+(S.ppeak-S.peep)*0.7:S.ppeak)} / ${S.peep}`:'--';
+    n_co2.textContent=etDisp();
+    n_rr.textContent=(S.rr<=0||S.capno==='apnoea')?'':'RR '+S.rr;
+    n_paw.textContent=S.rr>0?`${pawDisp()} / ${S.peep}`:'--';
     n_temp.textContent=S.temp.toFixed(1)+' °C';
+    evalAlarms(now);
   }
 
   /* mqtt */
@@ -375,7 +461,7 @@ function monitorApp(){
       if(S.joules!==oj&&(D.charged||D.charging))disarm('Energy changed – disarmed');
       updDef();
     }
-    if(tp==='cmd'){if(m.c==='charge')charge();else if(m.c==='shock')shock();else if(m.c==='disarm')disarm();else if(m.c==='nibp')startNIBP();else if(m.c==='nibpstop')stopNIBP()}
+    if(tp==='cmd'){if(m.c==='charge')charge();else if(m.c==='shock')shock();else if(m.c==='disarm')disarm();else if(m.c==='nibp')startNIBP();else if(m.c==='nibpstop')stopNIBP();else if(m.c==='silence')silence()}
   },ok=>{cst.textContent=ok?'● remote link ready':'○ disconnected';if(ok)pubStatus()});
   let last=performance.now();
   setInterval(()=>{let n=0;while(n<40&&last+DT*1000<=performance.now()){step();last+=DT*1000;n++}if(performance.now()-last>500)last=performance.now()},10);
