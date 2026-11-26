@@ -140,7 +140,8 @@ function monitorApp(){
    <div class="box" style="color:#fff"><small>Paw peak / PEEP cmH₂O</small><div class="big" id="n_paw">--</div></div>
    <div class="box" style="color:#fa0"><small>Temp</small><div class="mid" id="n_temp">--</div></div>
   </div>
-  <div id="defib"><h3 id="dtitle">DEFIB</h3><div class="big" id="dj" style="color:#fff;font-size:48px">150 J</div>
+  <div id="defib"><h3 id="dtitle">DEFIB</h3>
+   <div style="display:flex;align-items:center;justify-content:space-between"><button id="jdn" style="background:#444;color:#fff;width:60px">−</button><div class="big" id="dj" style="color:#fff;font-size:48px">150 J</div><button id="jup" style="background:#444;color:#fff;width:60px">+</button></div>
    <div class="bar"><div id="bf"></div></div><div id="dmsg" style="min-height:20px;color:#ff0"></div>
    <button id="bch" style="background:#fa0">CHARGE</button><button id="bsh" style="background:#d00;color:#fff">SHOCK</button><button id="bds">Disarm</button></div>
   <div id="flash"></div>
@@ -280,6 +281,17 @@ function monitorApp(){
     syncl.textContent=S.sync?'SYNC':'';
   }
   bch.onclick=charge;bsh.onclick=shock;bds.onclick=()=>disarm();
+  const EN=[1,2,5,10,20,30,50,70,100,120,150,200,300,360];
+  function chJ(d){
+    let i=EN.indexOf(S.joules);if(i<0)i=Math.max(0,EN.findIndex(v=>v>=S.joules));
+    i=clamp(i+d,0,EN.length-1);
+    if(EN[i]===S.joules)return;
+    S.joules=EN[i];
+    if(D.charged||D.charging)disarm('Energy changed – disarmed');
+    updDef();
+    pub('state',Object.assign({from:CID},S),true);
+  }
+  jdn.onclick=()=>chJ(-1);jup.onclick=()=>chJ(1);
 
   /* NIBP simulated cycle */
   const NB={st:'idle',phase:'',next:performance.now()/1000+300,t0:0,tgt:150,cuff:0,lastStep:0,sys:null,dia:null,time:'',err:false,msg:''};
@@ -349,7 +361,7 @@ function monitorApp(){
     n_nt.textContent=S.nibpInt>0&&NB.st==='idle'&&isFinite(NB.next)?`auto ${S.nibpInt} min · next ${Math.max(0,Math.round(NB.next-now))}s`:S.nibpInt>0?`auto ${S.nibpInt} min`:'manual';
     const ap=S.rr<=0||S.capno==='apnoea';
     n_co2.textContent=ap?'0':Math.round(Eeff()*exv(1,S.capno,S.capno==='rebreath'?0.15:0));
-    n_rr.textContent=ap?'apnoea':'RR '+S.rr;
+    n_rr.textContent=ap?'':'RR '+S.rr;
     n_paw.textContent=S.rr>0?`${Math.round(S.capno==='leak'?S.peep+(S.ppeak-S.peep)*0.7:S.ppeak)} / ${S.peep}`:'--';
     n_temp.textContent=S.temp.toFixed(1)+' °C';
   }
