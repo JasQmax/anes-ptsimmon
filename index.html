@@ -176,6 +176,7 @@ function monitorApp(){
   <div id="defib"><h3 id="dtitle">DEFIB</h3>
    <div style="display:flex;align-items:center;justify-content:space-between"><button id="jdn" style="background:#444;color:#fff;width:60px">−</button><div class="big" id="dj" style="color:#fff;font-size:48px">150 J</div><button id="jup" style="background:#444;color:#fff;width:60px">+</button></div>
    <div class="bar"><div id="bf"></div></div><div id="dmsg" style="min-height:20px;color:#ff0"></div>
+   <button id="bsy" style="background:#444;color:#fff;width:100%;margin:3px 0">SYNC OFF</button>
    <button id="bch" style="background:#fa0">CHARGE</button><button id="bsh" style="background:#d00;color:#fff">SHOCK</button><button id="bds">Disarm</button></div>
   <div id="flash"></div>
   <div id="info"><img src="https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(remoteURL)}" width="110" height="110"><br>Session <b>${SESS}</b><br><span id="cst">connecting…</span><br><a style="color:#8cf" href="${remoteURL}" target="_blank">remote link</a> · <a href="#" id="hide" style="color:#aaa">hide</a></div>
@@ -315,8 +316,17 @@ function monitorApp(){
     dj.textContent=S.joules+' J';dmsg.textContent=D.msg;
     bf.style.width=D.charged?'100%':D.charging?'50%':'0';
     syncl.textContent=S.sync?'SYNC':'';
+    bsy.textContent='SYNC '+(S.sync?'ON':'OFF');bsy.style.background=S.sync?'#0a6':'#444';
+    bsh.textContent=S.sync?'SHOCK (SYNC)':'SHOCK';
   }
   bch.onclick=charge;bsh.onclick=shock;bds.onclick=()=>disarm();
+  bsy.onclick=()=>{
+    S.sync=!S.sync;
+    if(D.pend){D.pend=false;D.msg='Pending sync shock cancelled'}
+    else if(D.charged)D.msg=(S.sync?'SYNC ON':'SYNC OFF')+' – still charged '+S.joules+' J';
+    updDef();pubStatus();
+    pub('state',Object.assign({from:CID},S),true);
+  };
   const EN=[1,2,5,10,20,30,50,70,100,120,150,200,300,360];
   function chJ(d){
     let i=EN.indexOf(S.joules);if(i<0)i=Math.max(0,EN.findIndex(v=>v>=S.joules));
