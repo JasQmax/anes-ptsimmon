@@ -132,7 +132,7 @@ function monitorApp(){
    <div class="row"><canvas id="c_paw"></canvas><span class="lab" style="color:#fff">Paw</span></div>
   </div>
   <div id="right">
-   <div class="box" style="color:#3f3"><small>HR  <span id="rlab"></span></small><div class="big" id="n_hr">--</div></div>
+   <div class="box" style="color:#3f3"><small>HR</small><div class="big" id="n_hr">--</div></div>
    <div class="box" style="color:#0ff"><small>SpO₂ %</small><div class="big" id="n_spo2">--</div></div>
    <div class="box" style="color:#f44" id="boxabp"><small>ABP mmHg</small><div class="abpn" id="n_abp">--</div></div>
    <div class="box" style="color:#fff"><small>NIBP mmHg <span id="n_nt" style="font-weight:normal;color:#999"></span></small><div class="mid" id="n_nibp">--</div><small id="n_nm" style="color:#999"></small><button class="nbtn" id="nbtn">Start NIBP cycle</button></div>
@@ -332,12 +332,11 @@ function monitorApp(){
   }
 
   /* numerics */
-  const RN={sinus:'Sinus',pvc:'Sinus + ectopics',af:'AF',vt:'VT',vf:'VF',pea:'PEA'};
   function nums(){
     const now=performance.now()/1000;
     if(D.pend&&now>D.pendUntil){D.pend=false;D.msg='No R wave sensed – NO SHOCK delivered';updDef();pubStatus()}
     const perf=perfusing(),vf=S.rhythm==='vf';
-    n_hr.textContent=vf?'---':S.hr;rlab.textContent=RN[S.rhythm]||'';
+    n_hr.textContent=vf?'---':S.hr;
     n_spo2.textContent=perf?S.spo2:'--';n_spo2.style.color=perf&&S.spo2<90?'#f33':'';
     rowabp.style.display=boxabp.style.display=S.abp?'':'none';
     const mp=Math.round(S.dia+(S.sys-S.dia)/3);
